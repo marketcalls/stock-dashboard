@@ -1,13 +1,24 @@
+import os
 from flask import Flask, render_template, request, jsonify
 from openalgo import api
 import pandas as pd
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 
 def get_api_client():
-    return api(api_key='93ae406f21d54ad32e79c98ba1174dcaa22f63ab92fc9b9615c9cd4ce2d2cdf2', 
-              host='http://127.0.0.1:5000')
+    # Get the API key from environment variables loaded from .env
+    api_key = os.environ.get('OPENALGO_API_KEY', '')
+    api_host = os.environ.get('OPENALGO_API_HOST', 'http://127.0.0.1:5000')
+    
+    if not api_key:
+        print("WARNING: OPENALGO_API_KEY environment variable not set. Check your .env file.")
+    
+    return api(api_key=api_key, host=api_host)
 
 def calculate_ema(data, period=20):
     """Calculate Exponential Moving Average"""

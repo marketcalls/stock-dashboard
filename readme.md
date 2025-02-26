@@ -21,7 +21,11 @@ A Flask-based stock market dashboard that displays TradingView-style charts usin
 
 ## Installation
 
-1. Clone this repository or download the files
+1. Clone this repository or download the files:
+   ```
+   git clone https://github.com/marketcalls/stock-dashboard.git
+   cd stock-dashboard
+   ```
 
 2. Create and activate a virtual environment (recommended):
    ```
@@ -31,14 +35,23 @@ A Flask-based stock market dashboard that displays TradingView-style charts usin
 
 3. Install the required packages:
    ```
-   pip install flask openalgo pandas
+   pip install -r requirements.txt
    ```
+
+4. Set up environment variables:
+   ```
+   cp .env.sample .env
+   ```
+   Then edit the `.env` file and add your OpenAlgo API key and other configuration options.
 
 ## Project Structure
 
 ```
 stock-market-dashboard/
 ├── app.py                 # Flask application
+├── .env.sample            # Sample environment variables file
+├── .env                   # Your actual environment variables (not committed to git)
+├── requirements.txt       # Python dependencies
 └── templates/
     ├── index.html         # Home page 
     └── charts.html        # TradingView charts page
@@ -86,9 +99,13 @@ If you encounter issues with the chart library:
 
 ## API Key
 
-The application uses the following API key for OpenAlgo API:
-```
-93ae406f21d54ad32e79c98ba1174dcaa22f63ab92fc9b9615c9cd4ce2d2cdf2
+For security purposes, you should store your OpenAlgo API key in an environment variable or a configuration file that is not committed to version control. In the example code, replace the hardcoded API key with:
+
+```python
+import os
+
+# Get API key from environment variable
+api_key = os.environ.get('OPENALGO_API_KEY')
 ```
 
-Make sure this key is valid for your OpenAlgo API instance.
+Never share your API keys in public repositories or documentation.
