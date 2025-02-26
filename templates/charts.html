@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingView Chart with OpenAlgo Data</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@3.9.4/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .watchlist {
+            width: 200px;
+            border-left: 1px solid #ccc;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .watchlist-item {
+            padding: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .watchlist-item:hover {
+            background-color: #f0f0f0;
+        }
+        .dark {
+            --bg-color: #131722;
+            --text-color: #d1d4dc;
+            --border-color: #2a2e39;
+            --control-bg: #2a2e39;
+            --up-color: #26a69a;
+            --down-color: #ef5350;
+        }
+        .light {
+            --bg-color: #ffffff;
+            --text-color: #131722;
+            --border-color: #e0e3eb;
+            --control-bg: #f2f3f5;
+            --up-color: #26a69a;
+            --down-color: #ef5350;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        input, select {
+            background-color: var(--control-bg);
+            color: var(--text-color);
+            border-color: var(--border-color);
+        }
+    </style>
+</head>
+<body class="dark">
+    <div class="flex h-screen flex-col md:flex-row">
+        <div class="flex-grow flex flex-col">
+            <header class="p-4 bg-opacity-90" style="background-color: var(--bg-color); border-bottom: 1px solid var(--border-color);">
+                <div class="flex flex-col md:flex-row md:justify-between md:items-center space-y-2 md:space-y-0">
+                    <div class="flex items-center space-x-2">
+                        <a href="/" class="text-xl font-bold">Stock Dashboard</a>
+                    </div>
+                    <div id="controls" class="flex flex-wrap gap-2 md:gap-4">
+                        <div class="flex items-center space-x-2">
+                            <label for="symbol">Symbol</label>
+                            <input type="text" id="symbol" class="p-2 rounded border w-24" value="{{ default_symbol }}">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="exchange">Exchange</label>
+                            <select id="exchange" class="p-2 rounded border w-24">
+                                {% for exchange in exchanges %}
+                                <option value="{{ exchange }}" {% if exchange == default_exchange %}selected{% endif %}>{{ exchange }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="interval">Interval</label>
+                            <select id="interval" class="p-2 rounded border w-20">
+                                <optgroup label="Minutes">
+                                    <option value="1m">1m</option>
+                                    <option value="2m">2m</option>
+                                    <option value="3m">3m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="10m">10m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="20m">20m</option>
+                                    <option value="30m">30m</option>
+                                </optgroup>
+                                <optgroup label="Hours">
+                                    <option value="1h">1h</option>
+                                    <option value="2h">2h</option>
+                                    <option value="4h">4h</option>
+                                </optgroup>
+                                <optgroup label="Days/Weeks/Months">
+                                    <option value="D" selected>Day</option>
+                                    <option value="W">Week</option>
+                                    <option value="M">Month</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="emaPeriod">EMA</label>
+                            <input type="number" id="emaPeriod" class="p-2 rounded border w-16" value="20" min="1" max="200">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="rsiPeriod">RSI</label>
+                            <input type="number" id="rsiPeriod" class="p-2 rounded border w-16" value="14" min="1" max="200">
+                        </div>
+                        <button id="fetchData" class="p-2 bg-blue-500 text-white rounded">Fetch Data</button>
+                        <div class="flex items-center space-x-2">
+                            <label for="autoUpdate">Auto-update</label>
+                            <input type="checkbox" id="autoUpdate" class="p-2 rounded border">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="updateFrequency">Frequency (s)</label>
+                            <input type="number" id="updateFrequency" class="p-2 rounded border w-16" value="30" min="5">
+                        </div>
+                        <button id="themeToggle" class="p-2 rounded" style="background-color: var(--control-bg);">Toggle Theme</button>
+                    </div>
+                </div>
+            </header>
+            <main class="flex-grow flex flex-col">
+                <div id="chart" class="w-full h-2/3"></div>
+                <div id="rsiChart" class="w-full h-1/3"></div>
+            </main>
+        </div>
+        <div id="watchlist" class="watchlist p-4" style="background-color: var(--bg-color); border-left: 1px solid var(--border-color);">
+            <h3 class="font-bold text-lg mb-4">Watchlist</h3>
+            <div id="watchlistItems" class="flex flex-col space-y-2">
+                <!-- Recent searches will be added here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the chart library from a specific CDN and version to avoid potential issues -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const symbolInput = document.getElementById('symbol');
+            const exchangeSelect = document.getElementById('exchange');
+            const intervalSelect = document.getElementById('interval');
+            const emaPeriodInput = document.getElementById('emaPeriod');
+            const rsiPeriodInput = document.getElementById('rsiPeriod');
+            const fetchDataButton = document.getElementById('fetchData');
+            const autoUpdateCheckbox = document.getElementById('autoUpdate');
+            const updateFrequencyInput = document.getElementById('updateFrequency');
+            const themeToggleButton = document.getElementById('themeToggle');
+            const chartContainer = document.getElementById('chart');
+            const rsiChartContainer = document.getElementById('rsiChart');
+            const watchlistContainer = document.getElementById('watchlistItems');
+            
+            // Chart instances
+            let chart = null;
+            let rsiChart = null;
+            let candleSeries = null;
+            let volumeSeries = null;
+            let emaSeries = null;
+            let rsiSeries = null;
+            
+            // Theme state
+            let isDarkTheme = true;
+            
+            // Auto-update timer
+            let updateTimer = null;
+            
+            // Watchlist data
+            let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+            
+            // Initialize the charts
+            initializeCharts();
+            
+            // Load the watchlist
+            updateWatchlistUI();
+            
+            // Load initial data
+            fetchData();
+            
+            // Event listeners
+            fetchDataButton.addEventListener('click', fetchData);
+            
+            autoUpdateCheckbox.addEventListener('change', toggleAutoUpdate);
+            
+            themeToggleButton.addEventListener('click', toggleTheme);
+            
+            // Initialize charts
+            function initializeCharts() {
+                // Clear containers
+                chartContainer.innerHTML = '';
+                rsiChartContainer.innerHTML = '';
+                
+                // Create main chart
+                chart = LightweightCharts.createChart(chartContainer, {
+                    width: chartContainer.clientWidth,
+                    height: chartContainer.clientHeight,
+                    layout: {
+                        backgroundColor: isDarkTheme ? '#131722' : '#ffffff',
+                        textColor: isDarkTheme ? '#d1d4dc' : '#131722',
+                    },
+                    grid: {
+                        vertLines: {
+                            color: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        },
+                        horzLines: {
+                            color: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        },
+                    },
+                    rightPriceScale: {
+                        borderColor: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                    },
+                    timeScale: {
+                        borderColor: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                    crosshair: {
+                        mode: 1, // CrosshairMode.Normal
+                    },
+                });
+                
+                // Add candlestick series
+                candleSeries = chart.addCandlestickSeries({
+                    upColor: '#26a69a',
+                    downColor: '#ef5350',
+                    wickUpColor: '#26a69a',
+                    wickDownColor: '#ef5350',
+                    borderVisible: false,
+                });
+                
+                // Add volume series
+                volumeSeries = chart.addHistogramSeries({
+                    color: '#26a69a',
+                    priceScaleId: 'volume',
+                    scaleMargins: {
+                        top: 0.8,
+                        bottom: 0,
+                    },
+                });
+                
+                // Add EMA series
+                emaSeries = chart.addLineSeries({
+                    color: '#2196F3',
+                    lineWidth: 2,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                });
+                
+                // Create RSI chart
+                rsiChart = LightweightCharts.createChart(rsiChartContainer, {
+                    width: rsiChartContainer.clientWidth,
+                    height: rsiChartContainer.clientHeight,
+                    layout: {
+                        backgroundColor: isDarkTheme ? '#131722' : '#ffffff',
+                        textColor: isDarkTheme ? '#d1d4dc' : '#131722',
+                    },
+                    grid: {
+                        vertLines: {
+                            color: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        },
+                        horzLines: {
+                            color: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        },
+                    },
+                    rightPriceScale: {
+                        borderColor: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                    },
+                    timeScale: {
+                        borderColor: isDarkTheme ? '#2a2e39' : '#e0e3eb',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                });
+                
+                // Add RSI series
+                rsiSeries = rsiChart.addLineSeries({
+                    color: '#9C27B0',
+                    lineWidth: 2,
+                    priceLineVisible: false,
+                });
+                
+                // Add overbought/oversold lines for RSI
+                const overboughtLine = rsiChart.addLineSeries({
+                    color: '#ef5350',
+                    lineWidth: 1,
+                    lineStyle: 1, // LineStyle.Dashed
+                    lastValueVisible: false,
+                });
+                
+                const oversoldLine = rsiChart.addLineSeries({
+                    color: '#26a69a',
+                    lineWidth: 1,
+                    lineStyle: 1, // LineStyle.Dashed
+                    lastValueVisible: false,
+                });
+                
+                // Set the overbought/oversold lines
+                const currentTime = Math.floor(Date.now() / 1000);
+                const pastTime = currentTime - 30 * 24 * 60 * 60; // 30 days ago
+                
+                overboughtLine.setData([
+                    { time: pastTime, value: 70 },
+                    { time: currentTime, value: 70 }
+                ]);
+                
+                oversoldLine.setData([
+                    { time: pastTime, value: 30 },
+                    { time: currentTime, value: 30 }
+                ]);
+                
+                // Sync the time scales between main chart and RSI chart
+                chart.timeScale().subscribeVisibleTimeRangeChange(range => {
+                    if (range) {
+                        rsiChart.timeScale().setVisibleRange(range);
+                    }
+                });
+                
+                rsiChart.timeScale().subscribeVisibleTimeRangeChange(range => {
+                    if (range) {
+                        chart.timeScale().setVisibleRange(range);
+                    }
+                });
+                
+                // Handle window resize
+                window.addEventListener('resize', handleResize);
+                
+                // Initial size adjustment
+                handleResize();
+            }
+            
+            // Handle window resize
+            function handleResize() {
+                if (chart && rsiChart) {
+                    chart.applyOptions({ 
+                        width: chartContainer.clientWidth,
+                        height: chartContainer.clientHeight 
+                    });
+                    
+                    rsiChart.applyOptions({ 
+                        width: rsiChartContainer.clientWidth,
+                        height: rsiChartContainer.clientHeight 
+                    });
+                }
+            }
+            
+            // Fetch data from the server
+            function fetchData() {
+                const symbol = symbolInput.value.trim().toUpperCase();
+                const exchange = exchangeSelect.value;
+                const interval = intervalSelect.value;
+                const emaPeriod = emaPeriodInput.value;
+                const rsiPeriod = rsiPeriodInput.value;
+                
+                if (!symbol || !exchange) {
+                    alert('Please enter a valid symbol and exchange');
+                    return;
+                }
+                
+                // Show loading state
+                chartContainer.classList.add('opacity-50');
+                rsiChartContainer.classList.add('opacity-50');
+                
+                // Fetch data from our API
+                const url = `/api/data?symbol=${symbol}&exchange=${exchange}&interval=${interval}&ema_period=${emaPeriod}&rsi_period=${rsiPeriod}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(result => {
+                        // Remove loading state
+                        chartContainer.classList.remove('opacity-50');
+                        rsiChartContainer.classList.remove('opacity-50');
+                        
+                        if (result.status === 'error') {
+                            alert(result.message || 'Error fetching data');
+                            return;
+                        }
+                        
+                        const data = result.data;
+                        
+                        if (!data.candlestick || data.candlestick.length === 0) {
+                            alert('No data available for the selected symbol and timeframe');
+                            return;
+                        }
+                        
+                        // Update chart data
+                        candleSeries.setData(data.candlestick);
+                        
+                        // Calculate volume data with colors based on price direction
+                        const volumeData = data.candlestick.map(candle => ({
+                            time: candle.time,
+                            value: candle.volume || 0,
+                            color: candle.close >= candle.open ? '#26a69a' : '#ef5350'
+                        }));
+                        
+                        volumeSeries.setData(volumeData);
+                        
+                        // Update EMA
+                        if (data.ema && data.ema.length > 0) {
+                            emaSeries.setData(data.ema);
+                        }
+                        
+                        // Update RSI
+                        if (data.rsi && data.rsi.length > 0) {
+                            rsiSeries.setData(data.rsi);
+                        }
+                        
+                        // Fit the content in the visible range
+                        chart.timeScale().fitContent();
+                        rsiChart.timeScale().fitContent();
+                        
+                        // Update URL with current parameters without reloading
+                        const newUrl = `/charts?symbol=${symbol}&exchange=${exchange}&interval=${interval}`;
+                        window.history.pushState({}, '', newUrl);
+                        
+                        // Add to watchlist if not already there
+                        addToWatchlist(symbol, exchange);
+                    })
+                    .catch(error => {
+                        // Remove loading state
+                        chartContainer.classList.remove('opacity-50');
+                        rsiChartContainer.classList.remove('opacity-50');
+                        
+                        console.error('Error:', error);
+                        alert('Failed to fetch data. Please try again.');
+                    });
+            }
+            
+            // Toggle theme between light and dark
+            function toggleTheme() {
+                isDarkTheme = !isDarkTheme;
+                
+                // Update body class
+                if (isDarkTheme) {
+                    document.body.classList.remove('light');
+                    document.body.classList.add('dark');
+                } else {
+                    document.body.classList.remove('dark');
+                    document.body.classList.add('light');
+                }
+                
+                // Reinitialize the charts with the new theme
+                initializeCharts();
+                
+                // Re-fetch data to update the charts
+                fetchData();
+            }
+            
+            // Toggle auto-update
+            function toggleAutoUpdate() {
+                if (autoUpdateCheckbox.checked) {
+                    const frequency = parseInt(updateFrequencyInput.value) || 30;
+                    updateTimer = setInterval(fetchData, frequency * 1000);
+                } else {
+                    if (updateTimer) {
+                        clearInterval(updateTimer);
+                        updateTimer = null;
+                    }
+                }
+            }
+            
+            // Add a symbol to the watchlist
+            function addToWatchlist(symbol, exchange) {
+                // Check if it's already in the watchlist
+                const exists = watchlist.some(item => 
+                    item.symbol === symbol && item.exchange === exchange
+                );
+                
+                if (!exists) {
+                    // Add to the beginning of the list
+                    watchlist.unshift({
+                        symbol,
+                        exchange,
+                        timestamp: new Date().toISOString()
+                    });
+                    
+                    // Keep only the 10 most recent items
+                    if (watchlist.length > 10) {
+                        watchlist = watchlist.slice(0, 10);
+                    }
+                    
+                    // Save to localStorage
+                    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+                    
+                    // Update UI
+                    updateWatchlistUI();
+                }
+            }
+            
+            // Update the watchlist UI
+            function updateWatchlistUI() {
+                watchlistContainer.innerHTML = '';
+                
+                if (watchlist.length === 0) {
+                    watchlistContainer.innerHTML = '<div class="text-sm opacity-70">No items in watchlist</div>';
+                    return;
+                }
+                
+                watchlist.forEach(item => {
+                    const itemElement = document.createElement('div');
+                    itemElement.className = 'watchlist-item rounded hover:bg-opacity-20 hover:bg-gray-500';
+                    itemElement.innerHTML = `
+                        <div class="font-medium">${item.symbol}</div>
+                        <div class="text-xs opacity-70">${item.exchange}</div>
+                    `;
+                    
+                    // Add click event
+                    itemElement.addEventListener('click', () => {
+                        symbolInput.value = item.symbol;
+                        
+                        // Find and select the exchange
+                        for (let i = 0; i < exchangeSelect.options.length; i++) {
+                            if (exchangeSelect.options[i].value === item.exchange) {
+                                exchangeSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        // Fetch data for this symbol/exchange
+                        fetchData();
+                    });
+                    
+                    watchlistContainer.appendChild(itemElement);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

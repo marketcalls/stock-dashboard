@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@3.9.4/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <style>
+        .quote-card {
+            transition: all 0.3s ease;
+        }
+        .quote-card:hover {
+            transform: translateY(-5px);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-base-200">
+    <div class="navbar bg-base-100 shadow-lg">
+        <div class="flex-1">
+            <a href="/" class="btn btn-ghost normal-case text-xl">Stock Dashboard</a>
+        </div>
+        <div class="flex-none">
+            <ul class="menu menu-horizontal px-1">
+                <li><a href="/" class="active">Home</a></li>
+                <li><a href="/charts">Charts</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="container mx-auto p-4">
+        <header class="text-center my-8">
+            <h1 class="text-4xl font-bold text-primary">Stock Market Dashboard</h1>
+            <p class="mt-2 text-base-content opacity-70">Get real-time stock quotes from various exchanges</p>
+        </header>
+
+        <div class="card bg-base-100 shadow-xl mb-8">
+            <div class="card-body">
+                <h2 class="card-title mb-4">Search for Quotes</h2>
+                <form id="quoteForm" class="flex flex-col md:flex-row gap-4">
+                    <div class="form-control flex-1">
+                        <label class="label">
+                            <span class="label-text">Stock Symbol</span>
+                        </label>
+                        <input type="text" id="symbol" name="symbol" placeholder="Enter symbol (e.g., RELIANCE)" class="input input-bordered w-full" required>
+                    </div>
+                    
+                    <div class="form-control w-full md:w-64">
+                        <label class="label">
+                            <span class="label-text">Exchange</span>
+                        </label>
+                        <select id="exchange" name="exchange" class="select select-bordered w-full">
+                            {% for exchange in exchanges %}
+                            <option value="{{ exchange }}">{{ exchange }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="form-control mt-auto">
+                        <button type="submit" id="fetchBtn" class="btn btn-primary">Get Quote</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="hidden flex justify-center my-8">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+        </div>
+
+        <div id="errorMessage" class="hidden alert alert-error mb-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span id="errorText">Error fetching quote data.</span>
+        </div>
+
+        <div id="quoteResult" class="hidden">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title flex justify-between">
+                        <span id="quoteSymbol">SYMBOL</span>
+                        <span class="badge badge-primary" id="quoteExchange">EXCHANGE</span>
+                    </h2>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Property</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="quoteTable">
+                                <!-- Table rows will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-12 mb-4">
+            <h2 class="text-xl font-semibold text-center">Recent Searches</h2>
+        </div>
+        <div id="recentSearches" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <!-- Recent searches will be added here -->
+        </div>
+    </div>
+
+    <footer class="footer footer-center p-4 bg-base-300 text-base-content">
+        <div>
+            <p>Stock Market Dashboard © 2025</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('quoteForm');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            const quoteResult = document.getElementById('quoteResult');
+            const quoteSymbol = document.getElementById('quoteSymbol');
+            const quoteExchange = document.getElementById('quoteExchange');
+            const quoteTable = document.getElementById('quoteTable');
+            const recentSearches = document.getElementById('recentSearches');
+            
+            // Load recent searches from localStorage
+            loadRecentSearches();
+            
+            form.addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const symbol = document.getElementById('symbol').value.trim().toUpperCase();
+                const exchange = document.getElementById('exchange').value;
+                
+                if (!symbol) {
+                    showError('Please enter a valid symbol');
+                    return;
+                }
+                
+                // Show loading indicator
+                loadingIndicator.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+                quoteResult.classList.add('hidden');
+                
+                // Create form data
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+                formData.append('exchange', exchange);
+                
+                // Fetch data
+                fetch('/get_quote', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loadingIndicator.classList.add('hidden');
+                    
+                    if (data.status === 'error') {
+                        showError(data.message || 'Error fetching quote data');
+                        return;
+                    }
+                    
+                    // Display the result
+                    displayQuoteResult(symbol, exchange, data);
+                    
+                    // Save to recent searches
+                    saveRecentSearch(symbol, exchange, data);
+                })
+                .catch(error => {
+                    loadingIndicator.classList.add('hidden');
+                    showError('Failed to fetch quote data. Please try again.');
+                    console.error('Error:', error);
+                });
+            });
+            
+            function displayQuoteResult(symbol, exchange, data) {
+                quoteSymbol.textContent = symbol;
+                quoteExchange.textContent = exchange;
+                
+                // Clear previous table rows
+                quoteTable.innerHTML = '';
+                
+                if (data.status === 'success' && data.data) {
+                    const quoteData = data.data;
+                    
+                    // Add rows to the table
+                    const properties = [
+                        { key: 'ltp', label: 'Last Traded Price' },
+                        { key: 'open', label: 'Open Price' },
+                        { key: 'high', label: 'High' },
+                        { key: 'low', label: 'Low' },
+                        { key: 'bid', label: 'Bid' },
+                        { key: 'ask', label: 'Ask' },
+                        { key: 'prev_close', label: 'Previous Close' },
+                        { key: 'volume', label: 'Volume' }
+                    ];
+                    
+                    for (const prop of properties) {
+                        const row = document.createElement('tr');
+                        
+                        const labelCell = document.createElement('td');
+                        labelCell.textContent = prop.label;
+                        
+                        const valueCell = document.createElement('td');
+                        valueCell.textContent = quoteData[prop.key] !== undefined ? quoteData[prop.key] : 'N/A';
+                        
+                        row.appendChild(labelCell);
+                        row.appendChild(valueCell);
+                        quoteTable.appendChild(row);
+                    }
+                    
+                    quoteResult.classList.remove('hidden');
+                } else {
+                    showError('Invalid data format received from server');
+                }
+            }
+            
+            function showError(message) {
+                errorText.textContent = message;
+                errorMessage.classList.remove('hidden');
+            }
+            
+            function saveRecentSearch(symbol, exchange, data) {
+                if (data.status !== 'success' || !data.data) return;
+                
+                let searches = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+                
+                // Add new search to the beginning
+                searches.unshift({
+                    symbol,
+                    exchange,
+                    ltp: data.data.ltp,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Keep only the most recent 6 searches
+                searches = searches.slice(0, 6);
+                
+                localStorage.setItem('recentSearches', JSON.stringify(searches));
+                
+                // Update the UI
+                loadRecentSearches();
+            }
+            
+            function loadRecentSearches() {
+                const searches = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+                
+                recentSearches.innerHTML = '';
+                
+                if (searches.length === 0) {
+                    const emptyMessage = document.createElement('div');
+                    emptyMessage.className = 'col-span-full text-center text-base-content opacity-70';
+                    emptyMessage.textContent = 'No recent searches yet';
+                    recentSearches.appendChild(emptyMessage);
+                    return;
+                }
+                
+                for (const search of searches) {
+                    const card = document.createElement('div');
+                    card.className = 'card bg-base-100 shadow-xl quote-card cursor-pointer';
+                    card.innerHTML = `
+                        <div class="card-body p-4">
+                            <h3 class="card-title text-lg">${search.symbol}
+                                <span class="badge badge-sm">${search.exchange}</span>
+                            </h3>
+                            <p class="text-2xl font-bold mt-2">${search.ltp || 'N/A'}</p>
+                            <p class="text-xs text-base-content opacity-70 mt-2">
+                                ${new Date(search.timestamp).toLocaleString()}
+                            </p>
+                        </div>
+                    `;
+                    
+                    // Add click event to load this search
+                    card.addEventListener('click', function() {
+                        document.getElementById('symbol').value = search.symbol;
+                        
+                        const exchangeSelect = document.getElementById('exchange');
+                        for (let i = 0; i < exchangeSelect.options.length; i++) {
+                            if (exchangeSelect.options[i].value === search.exchange) {
+                                exchangeSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        // Submit the form
+                        document.getElementById('fetchBtn').click();
+                    });
+                    
+                    recentSearches.appendChild(card);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
